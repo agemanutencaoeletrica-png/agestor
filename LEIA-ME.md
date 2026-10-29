@@ -62,6 +62,17 @@ Tudo fica salvo em `empresas.config` (JSON), sem mudar o código:
   `schema.sql`), na pasta da empresa; só a própria empresa abre, por link temporário.
 - A área pode ser desligada em Empresa → Áreas que a empresa usa.
 
+## 💰 Pagamentos da equipe (só dono e administrador)
+- **Pessoas**: funcionários com login e diaristas sem app. Com a **chave Pix** o app reconhece o
+  comprovante; com a **diária** calcula o fechamento pelos dias com chegada no “Meu dia”.
+- **Ler comprovantes**: foto (leitura por OCR, no próprio celular/computador), PDF, texto colado ou
+  **Ctrl+V**. O app tira valor, data, hora, quem recebeu e o ID do Pix, acha a pessoa (chave Pix, CPF,
+  telefone ou nome) e avisa se o comprovante **já foi lançado**. Também lança **pagamento em dinheiro**.
+- **Fechamento** por semana, quinzena ou mês: dias × diária, pago, adiantamentos/vales, reembolsos e
+  **saldo** de cada pessoa → PDF e WhatsApp para a pessoa. Planilha CSV e resumo no WhatsApp.
+- Quem tem login vê **os próprios pagamentos** e comprovantes em 👤 Minha conta. Comprovantes ficam no
+  Storage em `<empresa>/pagamentos/` e ninguém da equipe abre o de outra pessoa.
+
 ## Próximas etapas (ver PLANOS.md no repositório da AGE)
-Pagamentos da equipe, compras com leitura de nota,
+Compras com leitura de nota (usa o mesmo leitor dos comprovantes),
 cobrança automática, laudo técnico, e depois Play Store.

@@ -17,11 +17,12 @@
     { id: "orcamentos", nome: "Orçamentos", desc: "Orçamentos com itens, total automático, PDF e envio pelo WhatsApp." },
     { id: "catalogo", nome: "Catálogo", desc: "Sua tabela de serviços e materiais com preço, usada nos orçamentos." },
     { id: "servicos", nome: "Ordens de serviço", desc: "Serviços para a equipe, com chegada e saída pelo GPS, fotos, relatório e assinatura do cliente." },
+    { id: "pagamentos", nome: "Pagamentos da equipe", desc: "Lê o comprovante Pix, guarda e faz o fechamento por semana, quinzena ou mês." },
     { id: "equipe", nome: "Equipe", desc: "Convide funcionários e escolha o que cada um pode fazer." }
   ];
 
   var CONFIG = {
-    modulos: { clientes: true, orcamentos: true, catalogo: true, servicos: true, equipe: true },
+    modulos: { clientes: true, orcamentos: true, catalogo: true, servicos: true, pagamentos: true, equipe: true },
     rotulos: {},
     orcamento: {
       validade_dias: 15,
