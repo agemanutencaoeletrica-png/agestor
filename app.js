@@ -191,6 +191,7 @@
     if (ligado("orcamentos")) l.push(["orcamentos", "📄 " + R("orcamentos")]);
     if (ligado("clientes")) l.push(["clientes", "👥 " + R("clientes")]);
     if (ligado("catalogo")) l.push(["catalogo", "📦 " + R("catalogo")]);
+    if (gestor() && ligado("pagamentos") && window.AG_PAG) l.push(["pagamentos", "💰 Pagamentos"]);
     if (gestor() && ligado("equipe")) l.push(["equipe", "🧑‍🔧 Equipe"]);
     if (gestor()) l.push(["empresa", "⚙️ Empresa"]);
     if (S.admin) l.push(["dono", "👑 Painel do dono"]);
@@ -216,7 +217,7 @@
     var t = $("#tela");
     var OS = window.AG_OS || {};
     ({ inicio: telaInicio, orcamentos: telaOrcamentos, clientes: telaClientes, catalogo: telaCatalogo, equipe: telaEquipe, empresa: telaEmpresa, dono: telaDono,
-      meudia: OS.telaMeuDia, os: OS.telaOS })[at](t);
+      meudia: OS.telaMeuDia, os: OS.telaOS, pagamentos: (window.AG_PAG || {}).tela })[at](t);
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", function () { irPara(); atualizar(); });
@@ -839,7 +840,7 @@
     var PAP = { dono: "Dono", admin: "Administrador", equipe: "Equipe" };
     var j = A.janela("<p><b>" + esc(S.user.email) + "</b><br><span class=\"mudo peq\">" + esc(S.empresa.nome) + " · " + PAP[S.membro.papel] + "</span></p>" +
       '<label for="mc-nome">Seu nome</label><input id="mc-nome" maxlength="80" value="' + esc(S.membro.nome || "") + '">' +
-      '<div class="acoes"><button class="prim" id="mc-salvar">Salvar</button><button id="mc-senha">Trocar senha</button><button class="perigo" id="mc-sair">Sair</button></div>' +
+      '<div class="acoes"><button class="prim" id="mc-salvar">Salvar</button><button id="mc-senha">Trocar senha</button><button class="perigo" id="mc-sair">Sair</button></div><div id="mc-pag"></div>' +
       (A.CFG.SUPORTE_WHATSAPP ? '<p class="peq mudo">Ajuda: <a target="_blank" rel="noopener" href="' + esc(A.linkZap(A.CFG.SUPORTE_WHATSAPP, "Olá! Preciso de ajuda com o AGEstor.")) + '">suporte no WhatsApp</a></p>' : ""),
       { titulo: "Minha conta" });
     $("#mc-salvar", j.el).onclick = function () {
@@ -848,6 +849,7 @@
         .catch(function (e) { A.avisar(A.msgErro(e), "erro"); A.ocupado(b, false); });
     };
     $("#mc-senha", j.el).onclick = function () { j.fechar(); novaSenha(); };
+    if (ligado("pagamentos") && window.AG_PAG) window.AG_PAG.meus($("#mc-pag", j.el));
     $("#mc-sair", j.el).onclick = function () { j.fechar(); sair(); };
   }
 
