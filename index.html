@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<title>AGEstor — o gestor da sua empresa de serviços</title>
+<meta name="description" content="Clientes, orçamentos em PDF, catálogo de serviços e materiais e equipe, com a marca da sua empresa. Feito para elétrica, pintura, hidráulica, refrigeração e manutenção.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icone.svg" type="image/svg+xml">
+<link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+<header class="site-topo">
+  <h1>AGE<span>stor</span></h1>
+  <p>O gestor da sua empresa de serviços. Orçamentos bonitos em minutos, clientes organizados e a equipe trabalhando junto — com a <b>sua marca</b>.</p>
+  <div class="acoes"><a class="botao dest" href="app.html">Testar grátis</a><a class="botao" href="app.html">Entrar</a></div>
+  <p class="peq" id="dias-teste" style="font-size:14px;opacity:.85"></p>
+</header>
+<main>
+  <section class="recursos" style="margin-top:8px">
+    <div class="cartao"><div class="ic">📄</div><h3>Orçamento em PDF e WhatsApp</h3><p class="mudo">Escolha os itens do seu catálogo, o total sai sozinho. Mande pelo WhatsApp ou salve o PDF com sua logo.</p></div>
+    <div class="cartao"><div class="ic">📦</div><h3>Seu catálogo com preços</h3><p class="mudo">Já começa com uma tabela do seu ramo. Você ajusta os preços uma vez e usa sempre.</p></div>
+    <div class="cartao"><div class="ic">👥</div><h3>Clientes organizados</h3><p class="mudo">Telefone, endereço e todos os orçamentos de cada cliente num lugar só.</p></div>
+    <div class="cartao"><div class="ic">🧑‍🔧</div><h3>Equipe com permissões</h3><p class="mudo">Convide funcionários por código. Cada um vê só o que precisa.</p></div>
+    <div class="cartao"><div class="ic">🎨</div><h3>Do jeito da sua empresa</h3><p class="mudo">Logo, cores, áreas ligadas e até os nomes na tela (“Orçamento” ou “Proposta”) — sem programador.</p></div>
+    <div class="cartao"><div class="ic">🔒</div><h3>Seus dados protegidos</h3><p class="mudo">Cada empresa só enxerga os próprios dados. Funciona no celular e no computador, como app.</p></div>
+  </section>
+
+  <h2 style="margin:26px 0 12px">Planos</h2>
+  <div class="planos" id="planos"></div>
+  <p class="peq mudo">Todos começam com teste grátis, sem cartão. Plano anual com 2 meses grátis.</p>
+
+  <div class="cartao" style="margin-top:18px"><h3>Para quem é</h3><p class="mudo" style="margin-bottom:0">Elétrica, pintura, hidráulica, refrigeração e ar-condicionado, manutenção predial e outras empresas de serviços.</p></div>
+  <p class="peq mudo" style="text-align:center;margin-top:24px" id="contato"></p>
+</main>
+<script src="config.js"></script>
+<script src="comum.js"></script>
+<script>
+(function () {
+  var A = window.AG, C = A.CFG;
+  A.$("#dias-teste").textContent = (C.DIAS_TESTE || 14) + " dias grátis · sem cartão · cancele quando quiser";
+  A.$("#planos").innerHTML = (C.PLANOS || []).map(function (p) {
+    return '<div class="plano' + (p.destaque ? " destaque" : "") + '">' + (p.destaque ? '<span class="selo bom">Mais escolhido</span>' : "") +
+      "<h3 style=\"margin-top:6px\">" + A.esc(p.nome) + '</h3><div class="preco">' + A.dinheiro(p.preco) + '<span class="peq mudo">/mês</span></div><div class="mudo peq">' + A.esc(p.usuarios) +
+      "</div><ul>" + p.itens.map(function (i) { return "<li>" + A.esc(i) + "</li>"; }).join("") + '</ul><div class="acoes"><a class="botao prim" href="app.html">Começar teste</a></div></div>';
+  }).join("");
+  if (C.SUPORTE_WHATSAPP) A.$("#contato").innerHTML = 'Dúvidas? <a target="_blank" rel="noopener" href="' + A.esc(A.linkZap(C.SUPORTE_WHATSAPP, "Olá! Quero saber mais sobre o AGEstor.")) + '">Fale no WhatsApp</a>';
+})();
+</script>
+</body>
+</html>
