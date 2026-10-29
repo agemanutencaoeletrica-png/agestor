@@ -727,3 +727,112 @@ drop policy if exists "agestor fotos enviar" on storage.objects;
 create policy "agestor fotos enviar" on storage.objects for insert to authenticated
   with check (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.minha_empresa()::text and public.empresa_liberada()
               and ((storage.foldername(name))[2] is distinct from 'pagamentos' or public.sou_gestor()));
+
+-- =====================================================================
+-- 🧾 COMPRAS E DESPESAS (só dono e administrador)
+-- Nota lida pelo app (foto, PDF, XML) ou lançada à mão. A mesma nota não entra
+-- duas vezes (chave de acesso). O último preço pago vai para o catálogo como custo.
+-- =====================================================================
+
+create table if not exists public.compras (
+  id               uuid primary key default gen_random_uuid(),
+  empresa_id       uuid not null references public.empresas (id) on delete cascade,
+  tipo             text not null default 'material' check (tipo in ('material', 'despesa')),
+  categoria        text,                                -- despesa: combustivel, veiculo, alimentacao, pedagio, ferramentas, outros
+  comprado_em      date not null,
+  valor            numeric(12, 2) not null check (valor > 0),
+  fornecedor       text,
+  cnpj             text,
+  chave            text,                                -- chave de acesso da NF-e/NFC-e (44 dígitos)
+  numero_nota      text,
+  itens            jsonb not null default '[]'::jsonb,  -- [{item, qtd, un, unit, valor}]
+  forma_pagamento  text check (forma_pagamento in ('pix', 'dinheiro', 'cartao', 'boleto', 'fiado', 'outro')),
+  pago             boolean not null default true,
+  vencimento       date,
+  pago_em          timestamptz,
+  servico_id       uuid references public.servicos (id) on delete set null,   -- para qual ordem de serviço foi
+  destino          text,
+  descricao        text,
+  nota             text,                                -- foto da nota no Storage: <empresa>/compras/...
+  criado_por       uuid,
+  criado_em        timestamptz not null default now(),
+  constraint compras_itens check (jsonb_typeof(itens) = 'array' and jsonb_array_length(itens) <= 300)
+);
+create unique index if not exists compras_chave_idx on public.compras (empresa_id, chave) where chave is not null;
+create index if not exists compras_emp_idx on public.compras (empresa_id, comprado_em desc);
+create index if not exists compras_serv_idx on public.compras (servico_id);
+
+-- último preço pago de cada item do catálogo (pela nota): tabela à parte para a equipe não ver o custo
+create table if not exists public.custos (
+  catalogo_id  uuid primary key references public.catalogo (id) on delete cascade,
+  empresa_id   uuid not null references public.empresas (id) on delete cascade,
+  custo        numeric(12, 2) not null check (custo >= 0),
+  loja         text,
+  comprado_em  date,
+  atualizado_em timestamptz not null default now()
+);
+
+create or replace function public.tg_compra() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then new.criado_por := auth.uid(); else new.criado_por := old.criado_por; end if;
+  new.chave := nullif(regexp_replace(coalesce(new.chave, ''), '\D', '', 'g'), '');
+  if new.chave is not null and length(new.chave) <> 44 then new.chave := null; end if;
+  if new.servico_id is not null and not exists (select 1 from public.servicos s where s.id = new.servico_id and s.empresa_id = new.empresa_id) then
+    raise exception 'Ordem de serviço não encontrada na empresa.';
+  end if;
+  if new.nota is not null and (split_part(new.nota, '/', 1) <> new.empresa_id::text or split_part(new.nota, '/', 2) <> 'compras' or new.nota like '%..%') then
+    raise exception 'Foto da nota inválida.';
+  end if;
+  if new.pago then new.pago_em := coalesce(new.pago_em, now()); else new.pago_em := null; end if;
+  if jsonb_typeof(new.itens) <> 'array' then new.itens := '[]'::jsonb; end if;
+  return new;
+end $$;
+
+drop trigger if exists a_empresa on public.compras;
+create trigger a_empresa before insert or update on public.compras for each row execute function public.tg_da_empresa();
+drop trigger if exists b_compra on public.compras;
+create trigger b_compra before insert or update on public.compras for each row execute function public.tg_compra();
+
+create or replace function public.tg_custo() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.catalogo c where c.id = new.catalogo_id and c.empresa_id = new.empresa_id) then raise exception 'Item não encontrado no catálogo.'; end if;
+  new.atualizado_em := now();
+  return new;
+end $$;
+drop trigger if exists a_empresa on public.custos;
+create trigger a_empresa before insert or update on public.custos for each row execute function public.tg_da_empresa();
+drop trigger if exists b_custo on public.custos;
+create trigger b_custo before insert or update on public.custos for each row execute function public.tg_custo();
+alter table public.custos enable row level security;
+drop policy if exists tudo on public.custos;
+create policy tudo on public.custos for all to authenticated
+  using (empresa_id = public.minha_empresa() and public.sou_gestor())
+  with check (empresa_id = public.minha_empresa() and public.sou_gestor() and public.empresa_liberada());
+revoke all on public.custos from anon;
+grant select, insert, update, delete on public.custos to authenticated;
+
+alter table public.compras enable row level security;
+drop policy if exists ver on public.compras;
+create policy ver on public.compras for select to authenticated using (empresa_id = public.minha_empresa() and public.sou_gestor());
+drop policy if exists criar on public.compras;
+create policy criar on public.compras for insert to authenticated with check (empresa_id = public.minha_empresa() and public.empresa_liberada() and public.sou_gestor());
+drop policy if exists mudar on public.compras;
+create policy mudar on public.compras for update to authenticated
+  using (empresa_id = public.minha_empresa() and public.empresa_liberada() and public.sou_gestor()) with check (empresa_id = public.minha_empresa());
+drop policy if exists apagar on public.compras;
+create policy apagar on public.compras for delete to authenticated using (empresa_id = public.minha_empresa() and public.empresa_liberada() and public.sou_gestor());
+revoke all on public.compras from anon;
+grant select, insert, update, delete on public.compras to authenticated;
+
+-- fotos: pastas "pagamentos" e "compras" só para gestor (e o próprio comprovante de quem recebeu)
+drop policy if exists "agestor fotos ver" on storage.objects;
+create policy "agestor fotos ver" on storage.objects for select to authenticated
+  using (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.minha_empresa()::text
+         and (coalesce((storage.foldername(name))[2], '') not in ('pagamentos', 'compras') or public.sou_gestor()
+              or exists (select 1 from public.pagamentos p where p.comprovante = name and p.pessoa_id = public.minha_pessoa())));
+drop policy if exists "agestor fotos enviar" on storage.objects;
+create policy "agestor fotos enviar" on storage.objects for insert to authenticated
+  with check (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.minha_empresa()::text and public.empresa_liberada()
+              and (coalesce((storage.foldername(name))[2], '') not in ('pagamentos', 'compras') or public.sou_gestor()));

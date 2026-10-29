@@ -192,6 +192,7 @@
     if (ligado("clientes")) l.push(["clientes", "👥 " + R("clientes")]);
     if (ligado("catalogo")) l.push(["catalogo", "📦 " + R("catalogo")]);
     if (gestor() && ligado("pagamentos") && window.AG_PAG) l.push(["pagamentos", "💰 Pagamentos"]);
+    if (gestor() && ligado("compras") && window.AG_COMPRAS) l.push(["compras", "🧾 Compras"]);
     if (gestor() && ligado("equipe")) l.push(["equipe", "🧑‍🔧 Equipe"]);
     if (gestor()) l.push(["empresa", "⚙️ Empresa"]);
     if (S.admin) l.push(["dono", "👑 Painel do dono"]);
@@ -217,7 +218,7 @@
     var t = $("#tela");
     var OS = window.AG_OS || {};
     ({ inicio: telaInicio, orcamentos: telaOrcamentos, clientes: telaClientes, catalogo: telaCatalogo, equipe: telaEquipe, empresa: telaEmpresa, dono: telaDono,
-      meudia: OS.telaMeuDia, os: OS.telaOS, pagamentos: (window.AG_PAG || {}).tela })[at](t);
+      meudia: OS.telaMeuDia, os: OS.telaOS, pagamentos: (window.AG_PAG || {}).tela, compras: (window.AG_COMPRAS || {}).tela })[at](t);
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", function () { irPara(); atualizar(); });
@@ -321,6 +322,7 @@
   }
 
   // ---------- 📦 catálogo ----------
+  var CUSTOS = {};   // último preço pago (só o gestor vê; vem das notas de compra)
   function telaCatalogo(t) {
     var filtro = "todos";
     t.innerHTML = avisoSituacao() + '<div class="linha" style="margin-bottom:10px"><h2>' + esc(R("catalogo")) + '</h2><button class="prim dir" id="b-novo">+ Novo item</button></div>' +
@@ -338,12 +340,17 @@
       var l = S.catalogo.filter(function (i) { return (filtro === "todos" || i.tipo === filtro) && (!q || (i.descricao + " " + (i.categoria || "")).toLowerCase().indexOf(q) >= 0); });
       $("#lst").innerHTML = l.length ? l.map(function (i) {
         return '<button class="item" data-id="' + i.id + '"><span class="meio"><span class="forte">' + esc(i.descricao) + '</span><span class="mudo peq">' +
-          esc(i.tipo === "material" ? R("material") : R("servico")) + (i.categoria ? " · " + esc(i.categoria) : "") + '</span></span><span class="fim"><b>' +
+          esc(i.tipo === "material" ? R("material") : R("servico")) + (i.categoria ? " · " + esc(i.categoria) : "") +
+          (CUSTOS[i.id] ? " · custo " + A.dinheiro(CUSTOS[i.id].custo) : "") + '</span></span><span class="fim"><b>' +
           A.dinheiro(i.valor) + '</b><span class="mudo peq">por ' + esc(i.un) + "</span></span></button>";
       }).join("") : '<div class="vazio">Nenhum item.</div>';
       $$("[data-id]", $("#lst")).forEach(function (b) { b.onclick = function () { editarItem(S.catalogo.find(function (i) { return i.id === b.dataset.id; })); }; });
     }
     $("#busca").oninput = desenhar; desenhar();
+    if (gestor() && window.AG_COMPRAS) window.AG_COMPRAS.custos().then(function (l) {
+      CUSTOS = {}; l.forEach(function (c) { CUSTOS[c.catalogo_id] = c; });
+      if ($("#lst") && l.length) desenhar();
+    });
   }
 
   function editarItem(i) {
@@ -354,6 +361,9 @@
       '<div><label for="it-un">Unidade</label><input id="it-un" maxlength="10" value="' + esc(i.un || "un") + '" list="dl-un"></div>' +
       '<div><label for="it-cat">Categoria</label><input id="it-cat" maxlength="60" value="' + esc(i.categoria || "") + '"></div></div>' +
       '<datalist id="dl-un"><option value="un"><option value="m"><option value="m²"><option value="h"><option value="dia"><option value="pt"><option value="kit"><option value="cx"><option value="lata"><option value="rolo"></datalist>' +
+      (!novo && gestor() && CUSTOS[i.id] ? '<div class="aviso" style="background:var(--sup2)">Último custo: <b>' + A.dinheiro(CUSTOS[i.id].custo) + "</b>" +
+        (CUSTOS[i.id].loja ? " em " + esc(CUSTOS[i.id].loja) : "") + (CUSTOS[i.id].comprado_em ? " (" + A.data(CUSTOS[i.id].comprado_em + "T12:00:00") + ")" : "") +
+        (Number(i.valor) > 0 && Number(CUSTOS[i.id].custo) > 0 ? " · margem " + Math.round((Number(i.valor) / Number(CUSTOS[i.id].custo) - 1) * 100) + "%" : "") + "</div>" : "") +
       '<div class="acoes"><button class="prim" id="b-salvar">Salvar</button>' + (!novo && gestor() ? '<button type="button" class="perigo" id="b-apagar">Apagar</button>' : "") + "</div></form>",
       { titulo: novo ? "Novo item" : "Item" });
     var el = j.el;
