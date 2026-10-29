@@ -120,6 +120,39 @@
     });
   }
 
+  // foto do celular -> JPEG de no máximo "lado" px (Blob), para enviar rápido mesmo com internet fraca
+  function reduzirFoto(arquivo, lado) {
+    return reduzirImagemCanvas(arquivo, lado || 1600).then(function (c) {
+      return new Promise(function (ok, erro) { c.toBlob(function (b) { b ? ok(b) : erro(new Error("Não consegui preparar a foto.")); }, "image/jpeg", 0.82); });
+    });
+  }
+  function reduzirImagemCanvas(arquivo, lado) {
+    return new Promise(function (ok, erro) {
+      if (!arquivo || !/^image\//.test(arquivo.type)) return erro(new Error("Escolha uma foto (JPG ou PNG)."));
+      var url = URL.createObjectURL(arquivo), img = new Image();
+      img.onerror = function () { URL.revokeObjectURL(url); erro(new Error("Não consegui abrir a foto.")); };
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        var k = Math.min(1, lado / Math.max(img.width, img.height)), c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.width * k)); c.height = Math.max(1, Math.round(img.height * k));
+        var x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+        ok(c);
+      };
+      img.src = url;
+    });
+  }
+  // localização do celular (resolve null se a pessoa negar ou não houver GPS)
+  function posicao() {
+    return new Promise(function (ok) {
+      if (!navigator.geolocation) return ok(null);
+      navigator.geolocation.getCurrentPosition(function (p) { ok({ lat: p.coords.latitude, lng: p.coords.longitude, precisao: Math.round(p.coords.accuracy) }); },
+        function () { ok(null); }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 });
+    });
+  }
+  function hora(v) { return new Date(v).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); }
+  function linkMapa(lat, lng) { return "https://www.google.com/maps/search/?api=1&query=" + lat + "," + lng; }
+  function linkRota(endereco, maps) { return maps || "https://www.google.com/maps/dir/?api=1&destination=" + encodeURIComponent(endereco || ""); }
+
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
     window.addEventListener("load", function () { navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(function () {}); });
   }
@@ -127,5 +160,5 @@
   window.AG = { CFG: CFG, DIA: DIA, esc: esc, $: $, $$: $$, data: data, dinheiro: dinheiro, numero: numero, lerNumero: lerNumero, soDigitos: soDigitos,
     linkZap: linkZap, maiuscula: maiuscula, liberada: liberada, diasRestantes: diasRestantes, avisar: avisar, msgErro: msgErro, janela: janela,
     confirmar: confirmar, ocupado: ocupado, campoSenha: campoSenha, ligarVerSenha: ligarVerSenha, configurado: configurado, cliente: cliente,
-    copiar: copiar, reduzirImagem: reduzirImagem };
+    copiar: copiar, reduzirImagem: reduzirImagem, reduzirFoto: reduzirFoto, posicao: posicao, hora: hora, linkMapa: linkMapa, linkRota: linkRota };
 })();

@@ -400,3 +400,211 @@ grant execute on function public.criar_empresa(jsonb), public.salvar_empresa(jso
 -- ---------- Dono do AGEstor ----------
 -- Para ver o "Painel do dono", rode UMA vez no SQL Editor, com o seu e-mail de login:
 --   insert into public.admins (email) values ('seu-email@exemplo.com') on conflict do nothing;
+
+-- =====================================================================
+-- 🛠️ ORDENS DE SERVIÇO + APP DO FUNCIONÁRIO
+-- Quem é da equipe só vê as ordens dele (ou que ele abriu). Chegada, fotos
+-- e saída ficam com a hora do servidor e o GPS do celular; as fotos e a
+-- assinatura do cliente vão para o Storage (bucket "fotos", pasta da empresa).
+-- =====================================================================
+
+create table if not exists public.servicos (
+  id             uuid primary key default gen_random_uuid(),
+  empresa_id     uuid not null references public.empresas (id) on delete cascade,
+  numero         integer not null default 0,
+  cliente_id     uuid references public.clientes (id) on delete set null,
+  cliente_nome   text,
+  telefone       text,
+  endereco       text,
+  maps_url       text,
+  titulo         text not null check (length(trim(titulo)) between 1 and 200),
+  descricao      text,
+  status         text not null default 'aberta' check (status in ('aberta', 'agendada', 'andamento', 'concluida', 'cancelada')),
+  data_prevista  date,
+  responsavel    uuid,                                -- auth.users.id de quem vai fazer
+  orcamento_id   uuid references public.orcamentos (id) on delete set null,
+  criado_por     uuid,
+  criado_em      timestamptz not null default now(),
+  atualizado_em  timestamptz not null default now(),
+  concluida_em   timestamptz
+);
+
+create table if not exists public.pontos (
+  id          uuid primary key default gen_random_uuid(),
+  empresa_id  uuid not null references public.empresas (id) on delete cascade,
+  servico_id  uuid not null references public.servicos (id) on delete cascade,
+  usuario     uuid not null,
+  tipo        text not null check (tipo in ('chegada', 'foto', 'saida')),
+  lat         double precision,
+  lng         double precision,
+  precisao    double precision,
+  foto        text,                                    -- caminho no Storage (bucket "fotos")
+  obs         text,
+  criado_em   timestamptz not null default now()      -- hora do servidor (não dá para "voltar o relógio")
+);
+
+create table if not exists public.relatorios (
+  id             uuid primary key default gen_random_uuid(),
+  empresa_id     uuid not null references public.empresas (id) on delete cascade,
+  servico_id     uuid not null unique references public.servicos (id) on delete cascade,
+  usuario        uuid not null,
+  texto          text,
+  materiais      jsonb not null default '[]'::jsonb,   -- [{descricao, qtd, un}]
+  assinatura     text,                                  -- caminho no Storage
+  assinante      text,
+  criado_em      timestamptz not null default now(),
+  atualizado_em  timestamptz not null default now(),
+  constraint relatorios_mat check (jsonb_typeof(materiais) = 'array' and jsonb_array_length(materiais) <= 200)
+);
+
+create index if not exists servicos_emp_idx on public.servicos (empresa_id, status, data_prevista);
+create index if not exists servicos_resp_idx on public.servicos (responsavel, status);
+create unique index if not exists servicos_num_idx on public.servicos (empresa_id, numero);
+create index if not exists pontos_serv_idx on public.pontos (servico_id, criado_em);
+create index if not exists pontos_usu_idx on public.pontos (usuario, criado_em);
+
+-- caminho de arquivo precisa estar na pasta da empresa: <empresa_id>/...
+create or replace function public.caminho_da_empresa(p text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select p is null or (p ~ '^[0-9a-f-]{36}/[A-Za-z0-9/_.-]{1,200}$' and split_part(p, '/', 1) = public.minha_empresa()::text and p not like '%..%');
+$$;
+
+-- a pessoa pode trabalhar nesta ordem? (gestor: qualquer uma da empresa; equipe: só a dela)
+create or replace function public.posso_na_os(p_id uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.servicos s where s.id = p_id and s.empresa_id = public.minha_empresa()
+                 and (public.sou_gestor() or s.responsavel = auth.uid() or s.criado_por = auth.uid()));
+$$;
+
+create or replace function public.tg_servico() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    perform pg_advisory_xact_lock(hashtext('os:' || new.empresa_id::text));
+    select coalesce(max(numero), 0) + 1 into new.numero from public.servicos where empresa_id = new.empresa_id;
+    new.criado_por := auth.uid();
+    if not public.sou_gestor() then              -- quem é da equipe só abre ordem para si mesmo
+      new.responsavel := auth.uid();
+      new.status := 'aberta';
+    end if;
+  else
+    new.numero := old.numero;
+    new.criado_por := old.criado_por;
+  end if;
+  if new.responsavel is not null and not exists (select 1 from public.membros m where m.usuario = new.responsavel and m.empresa_id = new.empresa_id) then
+    raise exception 'O responsável precisa ser da equipe da empresa.';
+  end if;
+  if new.maps_url is not null and new.maps_url !~ '^https://' then new.maps_url := null; end if;
+  new.titulo := left(trim(new.titulo), 200);
+  new.concluida_em := case when new.status = 'concluida' then coalesce(new.concluida_em, now()) else null end;
+  new.atualizado_em := now();
+  return new;
+end $$;
+
+drop trigger if exists a_empresa on public.servicos;
+create trigger a_empresa before insert or update on public.servicos for each row execute function public.tg_da_empresa();
+drop trigger if exists b_servico on public.servicos;
+create trigger b_servico before insert or update on public.servicos for each row execute function public.tg_servico();
+
+-- chegada, foto ou saída (GPS e hora do servidor)
+create or replace function public.registrar_ponto(p_servico uuid, p_tipo text, p_lat double precision default null, p_lng double precision default null,
+                                                  p_precisao double precision default null, p_foto text default null, p_obs text default null)
+returns public.pontos
+language plpgsql volatile security definer set search_path = public as $$
+declare s public.servicos; r public.pontos;
+begin
+  if not public.empresa_liberada() then raise exception 'Sem permissão para gravar. Se o período de teste ou a assinatura venceu, fale com o suporte.'; end if;
+  if p_tipo not in ('chegada', 'foto', 'saida') then raise exception 'Tipo inválido.'; end if;
+  if not public.posso_na_os(p_servico) then raise exception 'Esta ordem de serviço não é sua.'; end if;
+  select * into s from public.servicos where id = p_servico for update;
+  if s.status in ('concluida', 'cancelada') then raise exception 'Esta ordem de serviço já foi encerrada.'; end if;
+  if not public.caminho_da_empresa(p_foto) then raise exception 'Foto inválida.'; end if;
+  if p_lat is not null and (p_lat not between -90 and 90 or p_lng is null or p_lng not between -180 and 180) then raise exception 'Localização inválida.'; end if;
+  insert into public.pontos (empresa_id, servico_id, usuario, tipo, lat, lng, precisao, foto, obs)
+  values (s.empresa_id, s.id, auth.uid(), p_tipo, p_lat, p_lng, p_precisao, p_foto, left(nullif(trim(p_obs), ''), 500))
+  returning * into r;
+  if p_tipo = 'chegada' and s.status in ('aberta', 'agendada') then
+    update public.servicos set status = 'andamento' where id = s.id;
+  end if;
+  return r;
+end $$;
+
+-- relatório final (o que foi feito, materiais usados e assinatura); p_concluir encerra a ordem
+create or replace function public.salvar_relatorio(p_servico uuid, p jsonb, p_concluir boolean default false) returns public.relatorios
+language plpgsql volatile security definer set search_path = public as $$
+declare s public.servicos; r public.relatorios; v_mat jsonb := '[]'::jsonb; i jsonb;
+begin
+  if not public.empresa_liberada() then raise exception 'Sem permissão para gravar. Se o período de teste ou a assinatura venceu, fale com o suporte.'; end if;
+  if not public.posso_na_os(p_servico) then raise exception 'Esta ordem de serviço não é sua.'; end if;
+  select * into s from public.servicos where id = p_servico for update;
+  if s.status = 'cancelada' then raise exception 'Esta ordem de serviço foi cancelada.'; end if;
+  if s.status = 'concluida' and not public.sou_gestor() then raise exception 'Esta ordem de serviço já foi concluída. Peça ao responsável para reabrir.'; end if;
+  if not public.caminho_da_empresa(p ->> 'assinatura') then raise exception 'Assinatura inválida.'; end if;
+  if jsonb_typeof(p -> 'materiais') = 'array' then
+    for i in select * from jsonb_array_elements(p -> 'materiais') limit 200 loop
+      if jsonb_typeof(i) = 'object' and coalesce(trim(i ->> 'descricao'), '') <> '' then
+        v_mat := v_mat || jsonb_build_object('descricao', left(trim(i ->> 'descricao'), 200),
+          'qtd', case when coalesce(i ->> 'qtd', '') ~ '^[0-9]+(\.[0-9]+)?$' then (i ->> 'qtd')::numeric else 1 end,
+          'un', left(coalesce(nullif(trim(i ->> 'un'), ''), 'un'), 10));
+      end if;
+    end loop;
+  end if;
+  insert into public.relatorios (empresa_id, servico_id, usuario, texto, materiais, assinatura, assinante)
+  values (s.empresa_id, s.id, auth.uid(), left(nullif(trim(p ->> 'texto'), ''), 5000), v_mat, nullif(p ->> 'assinatura', ''), left(nullif(trim(p ->> 'assinante'), ''), 120))
+  on conflict (servico_id) do update set
+    usuario = excluded.usuario, texto = excluded.texto, materiais = excluded.materiais,
+    assinatura = coalesce(excluded.assinatura, public.relatorios.assinatura),
+    assinante = coalesce(excluded.assinante, public.relatorios.assinante), atualizado_em = now()
+  returning * into r;
+  if p_concluir then update public.servicos set status = 'concluida' where id = s.id; end if;
+  return r;
+end $$;
+
+alter table public.servicos enable row level security;
+alter table public.pontos enable row level security;
+alter table public.relatorios enable row level security;
+
+drop policy if exists ver on public.servicos;
+create policy ver on public.servicos for select to authenticated
+  using (empresa_id = public.minha_empresa() and (public.sou_gestor() or responsavel = auth.uid() or criado_por = auth.uid()));
+drop policy if exists criar on public.servicos;
+create policy criar on public.servicos for insert to authenticated with check (empresa_id = public.minha_empresa() and public.empresa_liberada());
+drop policy if exists mudar on public.servicos;
+create policy mudar on public.servicos for update to authenticated
+  using (empresa_id = public.minha_empresa() and public.empresa_liberada() and public.sou_gestor()) with check (empresa_id = public.minha_empresa());
+drop policy if exists apagar on public.servicos;
+create policy apagar on public.servicos for delete to authenticated
+  using (empresa_id = public.minha_empresa() and public.empresa_liberada() and public.sou_gestor());
+
+drop policy if exists ver on public.pontos;
+create policy ver on public.pontos for select to authenticated using (empresa_id = public.minha_empresa() and (public.sou_gestor() or usuario = auth.uid()));
+drop policy if exists apagar on public.pontos;
+create policy apagar on public.pontos for delete to authenticated using (empresa_id = public.minha_empresa() and public.sou_gestor());
+drop policy if exists ver on public.relatorios;
+create policy ver on public.relatorios for select to authenticated using (empresa_id = public.minha_empresa() and public.posso_na_os(servico_id));
+
+revoke all on public.servicos, public.pontos, public.relatorios from anon;
+revoke insert, update on public.pontos, public.relatorios from authenticated;
+revoke delete on public.relatorios from authenticated;
+grant select, insert, update, delete on public.servicos to authenticated;
+grant select, delete on public.pontos to authenticated;
+grant select on public.relatorios to authenticated;
+revoke execute on function public.registrar_ponto(uuid, text, double precision, double precision, double precision, text, text),
+  public.salvar_relatorio(uuid, jsonb, boolean) from public, anon;
+grant execute on function public.registrar_ponto(uuid, text, double precision, double precision, double precision, text, text),
+  public.salvar_relatorio(uuid, jsonb, boolean), public.posso_na_os(uuid), public.caminho_da_empresa(text) to authenticated;
+
+-- ---------- Storage: fotos e assinaturas (privado, pasta de cada empresa) ----------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('fotos', 'fotos', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set public = false, file_size_limit = 5242880, allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp'];
+
+drop policy if exists "agestor fotos ver" on storage.objects;
+create policy "agestor fotos ver" on storage.objects for select to authenticated
+  using (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.minha_empresa()::text);
+drop policy if exists "agestor fotos enviar" on storage.objects;
+create policy "agestor fotos enviar" on storage.objects for insert to authenticated
+  with check (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.minha_empresa()::text and public.empresa_liberada());
+drop policy if exists "agestor fotos apagar" on storage.objects;
+create policy "agestor fotos apagar" on storage.objects for delete to authenticated
+  using (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.minha_empresa()::text and public.sou_gestor());

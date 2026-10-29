@@ -3,7 +3,7 @@
   "use strict";
   var A = window.AG, P = window.AG_PADRAO, esc = A.esc, $ = A.$, $$ = A.$$;
   var raiz = $("#app"), sb = null;
-  var S = { user: null, membro: null, empresa: null, cfg: null, admin: false, clientes: [], catalogo: [], orcamentos: [] };
+  var S = { user: null, membro: null, empresa: null, cfg: null, admin: false, clientes: [], catalogo: [], orcamentos: [], servicos: [], membros: [] };
   var STATUS = { rascunho: ["Rascunho", ""], enviado: ["Enviado", "atencao"], aprovado: ["Aprovado", "bom"], recusado: ["Recusado", "critico"] };
 
   // ---------- configuração da empresa (padrão + o que ela personalizou) ----------
@@ -115,18 +115,18 @@
   function carregarDados() {
     function q(t, ord, asc) { return sb.from(t).select("*").order(ord, { ascending: asc }).limit(2000); }
     return Promise.all([q("clientes", "nome", true), q("catalogo", "descricao", true), q("orcamentos", "criado_em", false),
-      sb.from("empresas").select("*").eq("id", S.membro.empresa_id).single()]).then(function (r) {
+      sb.from("empresas").select("*").eq("id", S.membro.empresa_id).single(), q("servicos", "criado_em", false), q("membros", "criado_em", true)]).then(function (r) {
       r.forEach(function (x) { if (x.error) throw x.error; });
       S.clientes = r[0].data || []; S.catalogo = r[1].data || []; S.orcamentos = r[2].data || [];
-      S.empresa = r[3].data; S.cfg = cfgDe(S.empresa); carregadoEm = Date.now();
+      S.empresa = r[3].data; S.cfg = cfgDe(S.empresa); S.servicos = r[4].data || []; S.membros = r[5].data || []; carregadoEm = Date.now();
     });
   }
   // busca o que a equipe mudou (ao trocar de aba, tocar na aba atual ou voltar ao app) sem atrapalhar quem está digitando
   function atualizar(forcar) {
     if (!S.empresa || (!forcar && Date.now() - carregadoEm < 20000)) return;
-    var antes = JSON.stringify([S.clientes, S.catalogo, S.orcamentos, S.empresa]);
+    var antes = JSON.stringify([S.clientes, S.catalogo, S.orcamentos, S.empresa, S.servicos, S.membros]);
     carregarDados().then(function () {
-      if (JSON.stringify([S.clientes, S.catalogo, S.orcamentos, S.empresa]) === antes) return;
+      if (JSON.stringify([S.clientes, S.catalogo, S.orcamentos, S.empresa, S.servicos, S.membros]) === antes) return;
       aplicarMarca();
       var foco = document.activeElement;
       if (!$(".fundo-modal") && !$(".doc-fundo") && !(foco && foco.closest && foco.closest("#tela") && /INPUT|TEXTAREA|SELECT/.test(foco.tagName))) montar();
@@ -164,28 +164,30 @@
           var itens = (P.RAMOS[ramo] || P.RAMOS.outro).itens.map(function (i) { return { tipo: i[0], descricao: i[1], un: i[2], valor: i[3] }; });
           return sb.from("catalogo").insert(itens).then(function (x) { if (x.error) A.avisar("A empresa foi criada, mas a tabela inicial não: " + A.msgErro(x.error), "erro"); });
         })
-        .then(function () { history.replaceState(null, "", location.pathname + "#inicio"); A.avisar("Empresa criada. Bem-vindo ao AGEstor!", "ok"); return iniciar(); })
+        .then(function () { history.replaceState(null, "", location.pathname); A.avisar("Empresa criada. Bem-vindo ao AGEstor!", "ok"); return iniciar(); })
         .catch(function (e) { A.avisar(A.msgErro(e), "erro"); A.ocupado(b, false); });
     };
     $("#f-conv").onsubmit = function (ev) {
       ev.preventDefault();
       var b = $("#b-conv"); A.ocupado(b, true);
       sb.rpc("entrar_com_convite", { p_codigo: $("#c-cod").value.trim().toUpperCase(), p_nome: $("#c-nome").value })
-        .then(function (r) { if (r.error) throw r.error; history.replaceState(null, "", location.pathname + "#inicio"); A.avisar("Você entrou na equipe de " + r.data.nome + ".", "ok"); return iniciar(); })
+        .then(function (r) { if (r.error) throw r.error; history.replaceState(null, "", location.pathname); A.avisar("Você entrou na equipe de " + r.data.nome + ".", "ok"); return iniciar(); })
         .catch(function (e) { A.avisar(A.msgErro(e), "erro"); A.ocupado(b, false); });
     };
   }
 
   function sair() {
     sb.auth.signOut().catch(function () {}).then(function () {
-      S = { user: null, membro: null, empresa: null, cfg: null, admin: false, clientes: [], catalogo: [], orcamentos: [] };
+      S = { user: null, membro: null, empresa: null, cfg: null, admin: false, clientes: [], catalogo: [], orcamentos: [], servicos: [], membros: [] };
       history.replaceState(null, "", location.pathname); telaEntrada();
     });
   }
 
   // ---------- estrutura (topo + abas) ----------
   function abas() {
-    var l = [["inicio", "🏠 Início"]];
+    var l = [["inicio", "🏠 Início"]], os = ligado("servicos") && window.AG_OS;
+    if (os) l.unshift(["meudia", "📍 Meu dia"]);
+    if (os && gestor()) l.push(["os", "🛠️ " + R("ordens")]);
     if (ligado("orcamentos")) l.push(["orcamentos", "📄 " + R("orcamentos")]);
     if (ligado("clientes")) l.push(["clientes", "👥 " + R("clientes")]);
     if (ligado("catalogo")) l.push(["catalogo", "📦 " + R("catalogo")]);
@@ -202,17 +204,19 @@
     $("#b-conta").onclick = minhaConta;
     $("#abas").onclick = function (ev) {
       var l = ev.target.closest("a"); if (!l) return;
-      if (l.getAttribute("href") === (location.hash || "#inicio")) { ev.preventDefault(); irPara(); atualizar(true); }
+      if (l.classList.contains("ativa")) { ev.preventDefault(); irPara(); atualizar(true); }
     };
     irPara();
   }
   function irPara() {
     if (!S.empresa) return;
-    var l = abas(), at = (location.hash || "#inicio").slice(1).split("/")[0];
-    if (!l.some(function (x) { return x[0] === at; })) at = "inicio";
+    var l = abas(), at = (location.hash || "").slice(1).split("/")[0];
+    if (!l.some(function (x) { return x[0] === at; })) at = !gestor() && l[0][0] === "meudia" ? "meudia" : "inicio";  // quem é da equipe começa pelo dia dele
     $("#abas").innerHTML = l.map(function (x) { return '<a href="#' + x[0] + '" class="' + (x[0] === at ? "ativa" : "") + '">' + esc(x[1]) + "</a>"; }).join("");
     var t = $("#tela");
-    ({ inicio: telaInicio, orcamentos: telaOrcamentos, clientes: telaClientes, catalogo: telaCatalogo, equipe: telaEquipe, empresa: telaEmpresa, dono: telaDono })[at](t);
+    var OS = window.AG_OS || {};
+    ({ inicio: telaInicio, orcamentos: telaOrcamentos, clientes: telaClientes, catalogo: telaCatalogo, equipe: telaEquipe, empresa: telaEmpresa, dono: telaDono,
+      meudia: OS.telaMeuDia, os: OS.telaOS })[at](t);
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", function () { irPara(); atualizar(); });
@@ -238,6 +242,9 @@
       '<div class="grade">' +
       (ligado("orcamentos") ? '<div class="ladrilho"><div class="r">' + esc(R("orcamentos")) + ' em aberto</div><div class="v">' + abertos.length + '</div><div class="d">' + A.dinheiro(soma(abertos)) + "</div></div>" +
         '<div class="ladrilho"><div class="r">Aprovados no mês</div><div class="v">' + aprov.length + '</div><div class="d">' + A.dinheiro(soma(aprov)) + "</div></div>" : "") +
+      (ligado("servicos") && gestor() ? '<a class="ladrilho" href="#os" style="text-decoration:none;color:inherit"><div class="r">' + esc(R("ordens")) + ' em aberto</div><div class="v">' +
+        S.servicos.filter(function (x) { return x.status !== "concluida" && x.status !== "cancelada"; }).length + '</div><div class="d">' +
+        S.servicos.filter(function (x) { return x.status === "andamento"; }).length + " em andamento</div></a>" : "") +
       (ligado("clientes") ? '<div class="ladrilho"><div class="r">' + esc(R("clientes")) + '</div><div class="v">' + S.clientes.length + "</div></div>" : "") +
       (ligado("catalogo") ? '<div class="ladrilho"><div class="r">' + esc(R("catalogo")) + ': itens</div><div class="v">' + S.catalogo.length + "</div></div>" : "") +
       "</div>" +
@@ -472,6 +479,7 @@
       '<div><label for="o-desc">Desconto (R$)</label><input id="o-desc" inputmode="decimal" value="' + (M.desconto ? esc(Number(M.desconto).toFixed(2).replace(".", ",")) : "") + '"><div class="totais" id="o-tot"></div></div></div>' +
       '<div class="linha" style="margin-top:10px"><span class="salvo" id="o-salvo">' + (o ? "Salvo ✓" : "Salva sozinho enquanto você digita") + "</span></div>" +
       '<div class="acoes"><button class="prim" id="o-ver">📄 Ver / PDF</button><button class="zap" id="o-zap">WhatsApp</button><button id="o-dup">Duplicar</button>' +
+      (gestor() && ligado("servicos") && window.AG_OS ? '<button id="o-gerar-os">🛠️ Gerar ' + esc(R("ordem").toLowerCase()) + "</button>" : "") +
       (gestor() ? '<button class="perigo" id="o-apagar">Apagar</button>' : "") + '<button id="o-fechar">Fechar</button></div>';
     $("#o-st", el).value = M.status;
     var apag = $("#o-apagar", el); if (apag) apag.classList.toggle("oculto", !M.id);
@@ -576,6 +584,8 @@
       if (M.status === "rascunho" && podeGravar() && !vazio(M)) { M.status = "enviado"; $("#o-st", el).value = "enviado"; mudou(); }
       return w;
     };
+    var go = $("#o-gerar-os", el);
+    if (go) go.onclick = function () { salvarJa().then(function () { if (!M.id) { A.avisar("Preencha o " + R("orcamento").toLowerCase() + " primeiro.", "erro"); return; } j.fechar(); window.AG_OS.gerarDeOrcamento(M); }); };
     $("#o-dup", el).onclick = function () {
       salvarJa().then(function () {
         var c = JSON.parse(JSON.stringify(dadosOrc(M))); c.status = "rascunho";
@@ -840,6 +850,10 @@
     $("#mc-senha", j.el).onclick = function () { j.fechar(); novaSenha(); };
     $("#mc-sair", j.el).onclick = function () { j.fechar(); sair(); };
   }
+
+  // ---------- o que os módulos (os.js) usam daqui ----------
+  window.AGX = { S: function () { return S; }, sb: function () { return sb; }, R: R, ligado: ligado, gestor: gestor, podeGravar: podeGravar,
+    avisoSituacao: avisoSituacao, irPara: irPara, nomeCliente: nomeCliente, editarCliente: editarCliente, STATUS: STATUS };
 
   // ---------- partida ----------
   if (!A.configurado()) {

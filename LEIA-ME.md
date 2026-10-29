@@ -50,6 +50,18 @@ Tudo fica salvo em `empresas.config` (JSON), sem mudar o código:
 - **WhatsApp**: manda o resumo para o telefone do cliente e marca como *Enviado*.
 - **Duplicar** para fazer um parecido.
 
+## 🛠️ Ordens de serviço e app do funcionário
+- **Gestor** (aba Ordens de serviço): cria a ordem (ou **Gerar OS** a partir de um orçamento), escolhe
+  data e quem vai fazer, acompanha chegada/fotos/saída e o relatório, gera o **Relatório / PDF** com
+  fotos e assinatura e manda para o cliente pelo **WhatsApp**. Pode reabrir uma ordem concluída.
+- **Funcionário** (aba **Meu dia**, abre direto nela): vê só as ordens dele, com **Como chegar**,
+  **Ligar** e WhatsApp do cliente; registra **📍 Cheguei / 📷 Foto / 🏁 Saí** (hora do servidor + GPS do
+  celular; sem GPS registra marcado “sem GPS”), escreve o **relatório** com os materiais usados e pega
+  a **assinatura do cliente com o dedo**. Também abre um serviço que não estava na lista.
+- Fotos e assinaturas ficam no **Storage** do Supabase (bucket privado `fotos`, criado pelo
+  `schema.sql`), na pasta da empresa; só a própria empresa abre, por link temporário.
+- A área pode ser desligada em Empresa → Áreas que a empresa usa.
+
 ## Próximas etapas (ver PLANOS.md no repositório da AGE)
-Ordens de serviço e app do funcionário, pagamentos da equipe, compras com leitura de nota,
+Pagamentos da equipe, compras com leitura de nota,
 cobrança automática, laudo técnico, e depois Play Store.
