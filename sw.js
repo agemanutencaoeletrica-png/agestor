@@ -1,6 +1,6 @@
 // Service worker do AGEstor: sempre confere a versão nova no servidor;
 // sem internet, abre a última cópia guardada. Dados nunca ficam aqui.
-var CACHE = "agestor-v4";
+var CACHE = "agestor-v5";
 var BASICOS = ["./index.html", "./app.html", "./estilo.css", "./comum.js", "./ramos.js", "./os.js", "./leitor.js", "./pagamentos.js", "./compras.js", "./app.js", "./config.js", "./icone.svg", "./manifest.webmanifest"];
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(BASICOS); }).then(function () { return self.skipWaiting(); }));
