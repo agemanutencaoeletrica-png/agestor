@@ -7,7 +7,8 @@
   var ROTULOS = {
     cliente: "Cliente", clientes: "Clientes",
     orcamento: "Orçamento", orcamentos: "Orçamentos",
-    servico: "Serviço", servicos: "Serviços", material: "Material", materiais: "Materiais", catalogo: "Catálogo"
+    servico: "Serviço", servicos: "Serviços", material: "Material", materiais: "Materiais", catalogo: "Catálogo",
+    ordem: "Ordem de serviço", ordens: "Ordens de serviço"
   };
 
   // áreas que podem ser ligadas e desligadas
@@ -15,11 +16,12 @@
     { id: "clientes", nome: "Clientes", desc: "Cadastro de clientes com telefone, endereço e WhatsApp." },
     { id: "orcamentos", nome: "Orçamentos", desc: "Orçamentos com itens, total automático, PDF e envio pelo WhatsApp." },
     { id: "catalogo", nome: "Catálogo", desc: "Sua tabela de serviços e materiais com preço, usada nos orçamentos." },
+    { id: "servicos", nome: "Ordens de serviço", desc: "Serviços para a equipe, com chegada e saída pelo GPS, fotos, relatório e assinatura do cliente." },
     { id: "equipe", nome: "Equipe", desc: "Convide funcionários e escolha o que cada um pode fazer." }
   ];
 
   var CONFIG = {
-    modulos: { clientes: true, orcamentos: true, catalogo: true, equipe: true },
+    modulos: { clientes: true, orcamentos: true, catalogo: true, servicos: true, equipe: true },
     rotulos: {},
     orcamento: {
       validade_dias: 15,

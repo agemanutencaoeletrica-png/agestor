@@ -71,7 +71,7 @@ button.peq, .botao.peq { padding: 6px 10px; min-height: 36px; font-size: 14px; }
 .mudo { color: var(--mudo); } .peq { font-size: 13px; } .forte { font-weight: 800; } .dir-txt { text-align: right; }
 .vazio { text-align: center; color: var(--mudo); padding: 26px 10px; }
 
-.lista { display: grid; gap: 8px; }
+.lista { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
 .item { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--borda); border-radius: 12px; background: var(--sup); cursor: pointer; text-align: left; width: 100%; color: var(--texto); font-weight: 400; justify-content: flex-start; }
 .item:hover { border-color: var(--prim); }
 .item .meio { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -164,3 +164,20 @@ button.peq, .botao.peq { padding: 6px 10px; min-height: 36px; font-size: 14px; }
 .plano.destaque { border-color: var(--prim); }
 .plano .preco { font-size: 30px; font-weight: 900; }
 .plano ul { padding-left: 18px; margin: 8px 0 0; }
+
+/* ordens de serviço e app do funcionário */
+.botoes-campo { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 14px; }
+.botoes-campo button { min-height: 64px; font-size: 16px; flex-direction: column; }
+.botoes-campo #c-rel { grid-column: 1 / -1; min-height: 52px; flex-direction: row; }
+.campo-info { display: grid; gap: 4px; }
+.foto-mini { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; flex: none; background: var(--sup2); }
+canvas.assinatura { width: 100%; height: 180px; background: #fff; border: 2px dashed var(--borda); border-radius: 12px; touch-action: none; display: block; }
+.linha-mat { display: grid; grid-template-columns: minmax(0, 1fr) 80px 70px 40px; gap: 6px; align-items: center; }
+.linha-mat input { padding: 8px; }
+.linha-mat .tirar { min-height: 36px; padding: 4px; background: none; border: 0; color: var(--critico); font-size: 18px; }
+.doc-fotos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.doc-fotos figure { margin: 0; break-inside: avoid; }
+.doc-fotos img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 4px; display: block; }
+.doc-fotos figcaption { font-size: 11px; color: #555; margin-top: 2px; }
+@media (max-width: 640px) { .doc-fotos { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .linha-mat { grid-template-columns: minmax(0, 1fr) 58px 52px 32px; gap: 4px; } }
