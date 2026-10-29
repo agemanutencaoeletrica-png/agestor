@@ -73,6 +73,18 @@ Tudo fica salvo em `empresas.config` (JSON), sem mudar o código:
 - Quem tem login vê **os próprios pagamentos** e comprovantes em 👤 Minha conta. Comprovantes ficam no
   Storage em `<empresa>/pagamentos/` e ninguém da equipe abre o de outra pessoa.
 
+## 🧾 Compras e despesas (só dono e administrador)
+- **Ler nota**: o **XML** que a loja manda por e-mail (exato), **PDF** (inclusive orçamento de loja gerado
+  pelo sistema dela, lido pela posição das colunas) ou **foto** do cupom/DANFE (OCR, com uma 2ª leitura
+  quando a soma dos itens não fecha). Também **colar lista**, lançar à mão e **despesas** (combustível,
+  veículo, alimentação, pedágio, ferramentas).
+- O app confere a **soma dos itens × total**, reconhece a **nota já lançada** (chave de acesso, número da
+  nota da mesma loja, ou mesma loja + valor + data) e não lança de novo.
+- **Falta pagar**: boleto e **fiado** (vence dia 5 do mês seguinte) ficam no alerta até tocar em “Paguei”.
+- Liga a compra a uma **ordem de serviço** (a OS mostra quanto de material foi comprado para ela).
+- O último preço pago vira **custo** do item (tabela `custos`, que a equipe não vê); o catálogo mostra o
+  custo e a margem. Material novo da nota entra no catálogo com preço de venda igual ao custo.
+- Totais por loja e por destino, planilha CSV.
+
 ## Próximas etapas (ver PLANOS.md no repositório da AGE)
-Compras com leitura de nota (usa o mesmo leitor dos comprovantes),
-cobrança automática, laudo técnico, e depois Play Store.
+Cobrança automática, laudo técnico, e depois Play Store.

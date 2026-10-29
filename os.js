@@ -179,7 +179,12 @@
     };
     detalhes(s.id).then(function (dt) {
       var rel = dt.rel, alvo = $("#os-and", el); if (!alvo) return;
-      alvo.innerHTML = htmlPontos(dt.pontos) + (rel ? '<h3 style="margin:14px 0 6px">Relatório</h3>' + htmlRelatorio(rel) : "");
+      alvo.innerHTML = htmlPontos(dt.pontos) + (rel ? '<h3 style="margin:14px 0 6px">Relatório</h3>' + htmlRelatorio(rel) : "") + '<div id="os-comp"></div>';
+      if (window.AG_COMPRAS && X().ligado("compras")) window.AG_COMPRAS.daOS(s.id).then(function (l) {
+        var c = $("#os-comp", el); if (!c || !l.length) return;
+        c.innerHTML = '<div class="aviso" style="background:var(--sup2);margin-top:12px">🧾 Material comprado para esta ordem: <b>' + A.dinheiro(l.reduce(function (t, x) { return t + Number(x.valor); }, 0)) +
+          "</b> em " + l.length + " nota(s)</div>";
+      });
     }).catch(function (e) { var a = $("#os-and", el); if (a) a.innerHTML = '<div class="aviso erro">' + esc(A.msgErro(e)) + "</div>"; });
   }
   function htmlRelatorio(rel) {
