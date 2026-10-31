@@ -122,7 +122,9 @@ create unique index if not exists orcamentos_num_idx on public.orcamentos (empre
 
 create or replace function public.eh_admin() returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.admins a where lower(a.email) = lower(coalesce(auth.jwt() ->> 'email', '')));
+  -- pelo usuário logado (auth.uid) e pelo e-mail atual e confirmado dele em auth.users, e não só pelo e-mail do login
+  select exists (select 1 from public.admins a join auth.users u on lower(u.email) = lower(a.email)
+                 where u.id = auth.uid() and u.email_confirmed_at is not null);
 $$;
 
 -- empresa da pessoa logada (null se ainda não entrou em nenhuma)
@@ -252,6 +254,7 @@ begin
     raise exception 'Só o dono pode mudar administradores.';
   end if;
   update public.membros set papel = p_papel, ativo = coalesce(p_ativo, ativo) where id = m.id returning * into m;
+  if not m.ativo then delete from public.convites where criado_por = m.usuario and usado_por is null and empresa_id = m.empresa_id; end if;   -- quem saiu não deixa convite aberto
   return m;
 end $$;
 
@@ -309,6 +312,9 @@ create or replace function public.tg_orcamento() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare v_itens jsonb := '[]'::jsonb; v_total numeric := 0; i jsonb; q numeric; v numeric;
 begin
+  if new.cliente_id is not null and not exists (select 1 from public.clientes c where c.id = new.cliente_id and c.empresa_id = new.empresa_id) then
+    raise exception 'Cliente não encontrado na empresa.';
+  end if;
   if tg_op = 'INSERT' then
     perform pg_advisory_xact_lock(hashtext('orc:' || new.empresa_id::text));
     select coalesce(max(numero), 0) + 1 into new.numero from public.orcamentos where empresa_id = new.empresa_id;
@@ -494,6 +500,12 @@ begin
   if new.responsavel is not null and not exists (select 1 from public.membros m where m.usuario = new.responsavel and m.empresa_id = new.empresa_id) then
     raise exception 'O responsável precisa ser da equipe da empresa.';
   end if;
+  if new.cliente_id is not null and not exists (select 1 from public.clientes c where c.id = new.cliente_id and c.empresa_id = new.empresa_id) then
+    raise exception 'Cliente não encontrado na empresa.';
+  end if;
+  if new.orcamento_id is not null and not exists (select 1 from public.orcamentos o where o.id = new.orcamento_id and o.empresa_id = new.empresa_id) then
+    raise exception 'Orçamento não encontrado na empresa.';
+  end if;
   if new.maps_url is not null and new.maps_url !~ '^https://' then new.maps_url := null; end if;
   new.titulo := left(trim(new.titulo), 200);
   new.concluida_em := case when new.status = 'concluida' then coalesce(new.concluida_em, now()) else null end;
@@ -518,7 +530,7 @@ begin
   if not public.posso_na_os(p_servico) then raise exception 'Esta ordem de serviço não é sua.'; end if;
   select * into s from public.servicos where id = p_servico for update;
   if s.status in ('concluida', 'cancelada') then raise exception 'Esta ordem de serviço já foi encerrada.'; end if;
-  if not public.caminho_da_empresa(p_foto) then raise exception 'Foto inválida.'; end if;
+  if not public.caminho_da_empresa(p_foto) or (p_foto is not null and split_part(p_foto, '/', 2) <> s.id::text) then raise exception 'Foto inválida.'; end if;
   if p_lat is not null and (p_lat not between -90 and 90 or p_lng is null or p_lng not between -180 and 180) then raise exception 'Localização inválida.'; end if;
   insert into public.pontos (empresa_id, servico_id, usuario, tipo, lat, lng, precisao, foto, obs)
   values (s.empresa_id, s.id, auth.uid(), p_tipo, p_lat, p_lng, p_precisao, p_foto, left(nullif(trim(p_obs), ''), 500))
@@ -539,7 +551,7 @@ begin
   select * into s from public.servicos where id = p_servico for update;
   if s.status = 'cancelada' then raise exception 'Esta ordem de serviço foi cancelada.'; end if;
   if s.status = 'concluida' and not public.sou_gestor() then raise exception 'Esta ordem de serviço já foi concluída. Peça ao responsável para reabrir.'; end if;
-  if not public.caminho_da_empresa(p ->> 'assinatura') then raise exception 'Assinatura inválida.'; end if;
+  if not public.caminho_da_empresa(p ->> 'assinatura') or (nullif(p ->> 'assinatura', '') is not null and split_part(p ->> 'assinatura', '/', 2) <> s.id::text) then raise exception 'Assinatura inválida.'; end if;
   if jsonb_typeof(p -> 'materiais') = 'array' then
     for i in select * from jsonb_array_elements(p -> 'materiais') limit 200 loop
       if jsonb_typeof(i) = 'object' and coalesce(trim(i ->> 'descricao'), '') <> '' then
@@ -826,13 +838,26 @@ create policy apagar on public.compras for delete to authenticated using (empres
 revoke all on public.compras from anon;
 grant select, insert, update, delete on public.compras to authenticated;
 
+-- a pessoa pode usar esta pasta do bucket "fotos"? <empresa>/<ordem>/...: só quem pode trabalhar na ordem (gestor: todas; equipe: as dela).
+-- As pastas "pagamentos" e "compras" têm a regra própria logo abaixo.
+create or replace function public.posso_na_pasta(p_nome text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.sou_gestor()
+      or split_part(p_nome, '/', 2) in ('pagamentos', 'compras')
+      or (split_part(p_nome, '/', 2) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' and public.posso_na_os(split_part(p_nome, '/', 2)::uuid));
+$$;
+revoke execute on function public.posso_na_pasta(text) from public, anon;
+grant execute on function public.posso_na_pasta(text) to authenticated;
+
 -- fotos: pastas "pagamentos" e "compras" só para gestor (e o próprio comprovante de quem recebeu)
 drop policy if exists "agestor fotos ver" on storage.objects;
 create policy "agestor fotos ver" on storage.objects for select to authenticated
   using (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.minha_empresa()::text
          and (coalesce((storage.foldername(name))[2], '') not in ('pagamentos', 'compras') or public.sou_gestor()
-              or exists (select 1 from public.pagamentos p where p.comprovante = name and p.pessoa_id = public.minha_pessoa())));
+              or exists (select 1 from public.pagamentos p where p.comprovante = name and p.pessoa_id = public.minha_pessoa()))
+         and public.posso_na_pasta(name));
 drop policy if exists "agestor fotos enviar" on storage.objects;
 create policy "agestor fotos enviar" on storage.objects for insert to authenticated
   with check (bucket_id = 'fotos' and (storage.foldername(name))[1] = public.minha_empresa()::text and public.empresa_liberada()
-              and (coalesce((storage.foldername(name))[2], '') not in ('pagamentos', 'compras') or public.sou_gestor()));
+              and (coalesce((storage.foldername(name))[2], '') not in ('pagamentos', 'compras') or public.sou_gestor())
+              and public.posso_na_pasta(name));

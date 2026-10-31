@@ -297,7 +297,7 @@
     return carregarScript(PDFJS + "pdf.min.js", function () { return !!window.pdfjsLib; }).then(function () {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.js";
       return f.arrayBuffer();
-    }).then(function (buf) { return window.pdfjsLib.getDocument({ data: buf }).promise; }).then(function (doc) {
+    }).then(function (buf) { return window.pdfjsLib.getDocument({ data: buf, isEvalSupported: false }).promise; }).then(function (doc) {
       return doc.getPage(1).then(function (pg) {
         return pg.getTextContent().then(function (tc) {
           // junta os pedaços por linha (mesma altura na página)
