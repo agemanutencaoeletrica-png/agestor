@@ -21,6 +21,13 @@ App (PWA) para empresas de elétrica, pintura, hidráulica, refrigeração e man
    **Nunca** coloque a chave `service_role` aqui.
 6. **GitHub Pages**: Settings → Pages → *Deploy from a branch* → `main` / raiz.
 
+
+## Segurança (o que mudou depois da auditoria)
+- **Painel do dono:** o app confere o **usuário logado** e o **e-mail confirmado** dele, não só o e-mail do login. Antes de rodar o `schema.sql` de novo, confira no SQL Editor:
+  `select a.email, u.email_confirmed_at from public.admins a left join auth.users u on lower(u.email) = lower(a.email);`. O seu e-mail precisa aparecer com a data preenchida; se vier vazio, o painel fecha para você.
+- **Fotos e assinaturas das ordens:** quem é da equipe só vê e grava as fotos e assinaturas das ordens em que pode trabalhar (as dele). Dono e administrador veem todas.
+- **Clientes e orçamentos:** uma ordem ou um orçamento só pode apontar para cliente (e orçamento) da própria empresa. Quem sai da equipe não deixa convite aberto.
+
 ## Como funciona a separação entre empresas
 - Cada pessoa pertence a **uma** empresa. Todas as tabelas têm regras (RLS): ninguém vê nem grava
   dados de outra empresa, nem forçando pelo navegador.
